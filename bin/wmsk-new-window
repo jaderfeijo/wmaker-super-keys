@@ -1,0 +1,17 @@
+#!/bin/sh
+# Open a new window of the currently focused application (macOS Cmd+N style).
+active=$(xprop -root _NET_ACTIVE_WINDOW | grep -o '0x[0-9a-f]*')
+[ -n "$active" ] || exit 0
+pid=$(xprop -id "$active" _NET_WM_PID 2>/dev/null | grep -o '[0-9]*$')
+[ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] || exit 0
+exe=$(basename "$(readlink -f "/proc/$pid/exe")")
+[ -n "$DRY" ] && { printf 'pid=%s exe=%s cmd=' "$pid" "$exe"; tr '\0' ' ' < "/proc/$pid/cmdline"; echo; exit 0; }
+cd "$HOME"
+case "$exe" in
+  nautilus)       exec nautilus --new-window ;;
+  gnome-terminal*) exec gnome-terminal --window ;;
+  firefox*)       exec "$exe" --new-window ;;
+  chrom*|google-chrome*) exec "$exe" --new-window ;;
+esac
+# Generic: re-run the same command line (works for xterm, gnome-text-editor, etc.)
+xargs -0 -a "/proc/$pid/cmdline" setsid -f >/dev/null 2>&1

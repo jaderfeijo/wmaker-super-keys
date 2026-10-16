@@ -1,0 +1,8 @@
+#!/bin/sh
+# wmsk-move-to-desktop N : move the focused window to desktop N (1-based), creating it if needed.
+n=$1
+case "$n" in ''|*[!0-9]*) exit 1;; esac
+[ "$n" -ge 1 ] || exit 1
+count=$(xprop -root _NET_NUMBER_OF_DESKTOPS | grep -o '[0-9]*$')
+[ "$n" -gt "$count" ] && wmctrl -n "$n"
+wmctrl -r :ACTIVE: -t $((n - 1))

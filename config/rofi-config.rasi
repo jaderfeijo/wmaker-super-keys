@@ -1,0 +1,4 @@
+configuration {
+    /* let Super+Space close the launcher it opened (rofi grabs the keyboard while it is open) */
+    kb-cancel: "Escape,Super+space";
+}

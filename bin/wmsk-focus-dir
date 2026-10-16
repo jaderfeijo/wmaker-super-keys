@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""wmsk-focus-dir left|right|up|down -- focus the nearest window in that direction (current desktop)."""
+import subprocess, sys, os
+
+def run(*a):
+    return subprocess.run(a, capture_output=True).stdout.decode("utf-8", "replace")
+
+direction = sys.argv[1] if len(sys.argv) > 1 else ""
+if direction not in ("left", "right", "up", "down"):
+    sys.exit("usage: wmsk-focus-dir left|right|up|down")
+
+cur_desktop = None
+for line in run("wmctrl", "-d").splitlines():
+    f = line.split()
+    if len(f) > 1 and f[1] == "*":
+        cur_desktop = int(f[0])
+
+active = run("xprop", "-root", "_NET_ACTIVE_WINDOW").split("#")[-1].strip()
+active = int(active, 16) if active.startswith("0x") else 0
+
+wins = []
+for line in run("wmctrl", "-lG").splitlines():
+    f = line.split(None, 7)
+    if len(f) < 7:
+        continue
+    wid, desk, x, y, w, h = int(f[0], 16), int(f[1]), int(f[2]), int(f[3]), int(f[4]), int(f[5])
+    if desk not in (cur_desktop, -1):
+        continue
+    state = run("xprop", "-id", hex(wid), "_NET_WM_STATE", "WM_STATE")
+    if "HIDDEN" in state or "Iconic" in state:       # minimized
+        continue
+    wins.append((wid, x + w / 2, y + h / 2))
+
+me = next((w for w in wins if w[0] == active), None)
+if me is None:
+    # nothing focused on this desktop: focus the first window we can see
+    if wins and not os.environ.get("DRY"):
+        subprocess.run(["wmctrl", "-i", "-a", hex(wins[0][0])])
+    sys.exit(0)
+
+best, best_score = None, None
+for wid, cx, cy in wins:
+    if wid == active:
+        continue
+    dx, dy = cx - me[1], cy - me[2]
+    along, across = {"right": (dx, dy), "left": (-dx, dy), "down": (dy, dx), "up": (-dy, dx)}[direction]
+    if along <= 1 or abs(across) > 2 * along:   # not in that direction (outside a ~60 degree cone)
+        continue
+    score = along + 2 * abs(across)      # prefer windows that are straight ahead
+    if best_score is None or score < best_score:
+        best, best_score = wid, score
+
+if os.environ.get("DRY"):
+    print(f"active={hex(active)} dir={direction} -> {hex(best) if best else None}  ({len(wins)} windows)")
+elif best:
+    subprocess.run(["wmctrl", "-i", "-a", hex(best)])

@@ -1,0 +1,7 @@
+! Super+C / Super+V copy and paste in xterm (like Cmd+C / Cmd+V), via the CLIPBOARD.
+XTerm*selectToClipboard: true
+XTerm*VT100.translations: #override \n\
+    Mod4 <Key>c: copy-selection(CLIPBOARD) \n\
+    Mod4 <Key>v: insert-selection(CLIPBOARD) \n\
+    Ctrl Shift <Key>C: copy-selection(CLIPBOARD) \n\
+    Ctrl Shift <Key>V: insert-selection(CLIPBOARD)

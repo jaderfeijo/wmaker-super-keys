@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""wmsk-show-desktop -- toggle: hide every window on this desktop (like WindowMaker's Super+H, no minimized icons), or bring them back."""
+import ctypes, json, os, subprocess, sys, time
+
+STATE = os.path.expanduser("~/.cache/wmaker-super-keys/wmsk-show-desktop.json")
+FILTER = os.environ.get("SD_TEST_FILTER")        # test hook: only touch windows whose title contains this
+os.makedirs(os.path.dirname(STATE), exist_ok=True)
+
+def run(*a):
+    return subprocess.run(a, capture_output=True).stdout.decode("utf-8", "replace")
+def active():
+    t = run("xprop", "-root", "_NET_ACTIVE_WINDOW").split("#")[-1].strip()
+    return int(t, 16) if t.startswith("0x") else 0
+def hidden(wid):
+    return "Iconic" in run("xprop", "-id", hex(wid), "WM_STATE")
+def activate(wid):
+    subprocess.run(["wmctrl", "-i", "-a", hex(wid)])
+
+x = ctypes.CDLL("libX11.so.6"); t = ctypes.CDLL("libXtst.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+x.XStringToKeysym.restype = ctypes.c_ulong
+dpy = ctypes.c_void_p(x.XOpenDisplay(None))
+root = x.XDefaultRootWindow(dpy)
+
+def keycode(name):
+    return x.XKeysymToKeycode(dpy, x.XStringToKeysym(name.encode()))
+def fake(code, press):
+    t.XTestFakeKeyEvent(dpy, code, 1 if press else 0, 0); x.XFlush(dpy)
+def modifiers():
+    r, c = ctypes.c_ulong(), ctypes.c_ulong()
+    a = [ctypes.c_int() for _ in range(4)]; m = ctypes.c_uint()
+    x.XQueryPointer(dpy, root, ctypes.byref(r), ctypes.byref(c), *[ctypes.byref(v) for v in a], ctypes.byref(m))
+    return m.value
+
+if os.path.exists(STATE):                          # ---- bring everything back
+    saved = json.load(open(STATE)); os.remove(STATE)
+    for wid in saved["windows"]:
+        if wid != saved["active"] and hidden(wid):
+            activate(wid); time.sleep(0.05)
+    if saved["active"]:
+        activate(saved["active"])
+    sys.exit(0)
+
+desk = next((int(l.split()[0]) for l in run("wmctrl", "-d").splitlines() if len(l.split()) > 1 and l.split()[1] == "*"), 0)
+wins = []
+for line in run("wmctrl", "-lG").splitlines():
+    f = line.split(None, 7)
+    if len(f) < 7 or (not FILTER and int(f[1]) not in (desk, -1)):
+        continue
+    if FILTER and FILTER not in (f[7] if len(f) > 7 else ""):
+        continue
+    wid = int(f[0], 16)
+    if not hidden(wid):
+        wins.append(wid)
+if not wins:
+    sys.exit(0)
+act = active()
+json.dump({"windows": wins, "active": act if act in wins else wins[0]}, open(STATE, "w"))
+
+# Wait for the user to let go of Shift (the shortcut is Super+Shift+H); otherwise WindowMaker sees Super+Shift+H, not Super+H.
+for _ in range(30):
+    if not modifiers() & 0x1:
+        break
+    time.sleep(0.05)
+
+SUPER, H = keycode("Super_L"), keycode("h")
+
+def hide_app_of(wid):
+    activate(wid)
+    for _ in range(30):                              # wait until the focus has really moved
+        if active() == wid:
+            break
+        time.sleep(0.02)
+    time.sleep(0.08)
+    pressed_super = not modifiers() & 0x40
+    if pressed_super: fake(SUPER, True)
+    fake(H, True); fake(H, False)
+    if pressed_super: fake(SUPER, False)
+    for _ in range(25):                              # wait for WindowMaker to hide it
+        if hidden(wid):
+            return
+        time.sleep(0.02)
+
+for _attempt in range(2):                            # second pass catches anything that didn't take
+    for wid in sorted(wins, key=lambda w: w == act):    # focused window last
+        if not hidden(wid):
+            hide_app_of(wid)

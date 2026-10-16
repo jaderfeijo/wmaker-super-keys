@@ -1,0 +1,25 @@
+#!/bin/sh
+# Focus the next window of the same application (macOS Cmd+` style).
+active=$(xprop -root _NET_ACTIVE_WINDOW | grep -o '0x[0-9a-f]*')
+[ -n "$active" ] || exit 0
+desk_of() { xprop -id "$1" _NET_WM_DESKTOP 2>/dev/null | grep -o '[0-9]*$'; }
+class_of() { xprop -id "$1" WM_CLASS 2>/dev/null | sed 's/.*= //'; }
+cls=$(class_of "$active")
+[ -n "$cls" ] || exit 0
+curdesk=$(xprop -root _NET_CURRENT_DESKTOP | grep -o '[0-9]*$')
+ids=$(xprop -root _NET_CLIENT_LIST | grep -o '0x[0-9a-f]*')
+same=""
+for id in $ids; do
+  d=$(desk_of "$id")
+  [ "$d" = "$curdesk" ] || [ "$d" = 4294967295 ] || continue
+  [ "$(class_of "$id")" = "$cls" ] && same="$same $id"
+done
+set -- $same
+[ $# -lt 2 ] && exit 0
+next=""; found=0
+for id in "$@"; do
+  if [ "$found" = 1 ]; then next=$id; break; fi
+  [ "$(printf '%d' "$id")" = "$(printf '%d' "$active")" ] && found=1
+done
+[ -n "$next" ] || next=$1
+wmctrl -i -a "$next"

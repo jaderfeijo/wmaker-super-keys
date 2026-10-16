@@ -1,0 +1,108 @@
+#!/bin/bash
+# wmsk-snap left|right|center|maximize|restore|minimize|unminimize  -- act on the focused window (or $WIN).
+# Space taken by the Window Maker dock, so tiled windows do not cover it. Set WMSK_DOCK_LEFT / WMSK_DOCK_RIGHT
+# (pixels) in the environment or in ~/.config/wmaker-super-keys/config; otherwise it is detected automatically.
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/wmaker-super-keys/config"
+[ -r "$CONFIG" ] && . "$CONFIG"
+action=$1
+STATE_DIR="$HOME/.cache/wmaker-super-keys"; mkdir -p "$STATE_DIR"
+MIN_STACK="$STATE_DIR/minimized"     # window ids we minimized, newest last
+
+is_hidden() { xprop -id "$1" _NET_WM_STATE 2>/dev/null | grep -q 'HIDDEN'; }
+
+# Bring back the most recently minimized window. Windows we minimized come first (newest first);
+# anything else that is hidden (minimized with the title-bar button or Super+M) is used as a fallback.
+if [ "$action" = unminimize ]; then
+  target=""
+  if [ -f "$MIN_STACK" ]; then
+    for id in $(tac "$MIN_STACK"); do is_hidden "$id" && { target=$id; break; }; done
+  fi
+  if [ -z "$target" ]; then
+    for id in $(xprop -root _NET_CLIENT_LIST | grep -o '0x[0-9a-f]*' | tac); do is_hidden "$id" && { target=$id; break; }; done
+  fi
+  [ -n "$target" ] || { exec "$0" restore; }      # nothing minimized: untile the focused window instead
+  [ -f "$MIN_STACK" ] && grep -vxF "$target" "$MIN_STACK" > "$MIN_STACK.tmp" && mv "$MIN_STACK.tmp" "$MIN_STACK"
+  python3 -I - "$target" <<'PY'
+import ctypes, sys
+x = ctypes.CDLL('libX11.so.6'); x.XOpenDisplay.restype = ctypes.c_void_p
+d = ctypes.c_void_p(x.XOpenDisplay(None))
+x.XMapRaised(d, ctypes.c_ulong(int(sys.argv[1], 16)))
+x.XFlush(d)
+PY
+  sleep 0.2; wmctrl -i -a "$target"
+  exit 0
+fi
+
+win=${WIN:-$(xprop -root _NET_ACTIVE_WINDOW | grep -o "0x[0-9a-f]*")}
+[ -n "$win" ] && [ "$win" != 0x0 ] || exit 0
+state="$STATE_DIR/$win"      # line 1: original frame geometry, line 2: geometry after our last snap
+
+read -r W H < <(wmctrl -d | awk '/\*/{split($4,a,"x"); print a[1], a[2]}')
+read -r fl fr ft fb < <(xprop -id "$win" _NET_FRAME_EXTENTS | grep -o '[0-9]\+' | tr '\n' ' ')
+fl=${fl:-0}; fr=${fr:-0}; ft=${ft:-0}; fb=${fb:-0}
+# Dock detection: the dock is a column of 64x64 icon tiles touching the left or the right screen edge.
+detect_dock() {
+  xwininfo -root -tree 2>/dev/null | awk -v W="$W" '
+    / 64x64[+-][0-9]+[+-][0-9]+ +\+[0-9]+\+[0-9]+$/ {
+      split($NF, a, "+"); x = a[2]; y = a[3]
+      if (x == 0 && !(("L" y) in seen)) { seen["L" y] = 1; l++ }
+      if (x == W - 64 && !(("R" y) in seen)) { seen["R" y] = 1; r++ }
+    }
+    END { print (l >= 2 ? 64 : 0), (r >= 2 ? 64 : 0) }'
+}
+if [ -z "${WMSK_DOCK_LEFT+x}${WMSK_DOCK_RIGHT+x}" ]; then
+  read -r det_left det_right < <(detect_dock)
+fi
+DL=${WMSK_DOCK_LEFT:-${det_left:-0}}
+DR=${WMSK_DOCK_RIGHT:-${det_right:-0}}
+AW=$((W - DL - DR))
+
+# Current outer-frame geometry: "x y w h"
+frame_geom() {
+  xwininfo -id "$win" | awk -v fl=$fl -v fr=$fr -v ft=$ft -v fb=$fb \
+    '/Absolute upper-left X/{x=$4} /Absolute upper-left Y/{y=$4} /Width:/{w=$2} /Height:/{h=$2}
+     END{print x-fl, y-ft, w+fl+fr, h+ft+fb}'
+}
+# Set outer-frame geometry (x,y = frame top-left; w,h = frame size)
+place() { wmctrl -i -r "$win" -e "0,$1,$2,$(( $3 - fl - fr )),$(( $4 - ft - fb ))"; }
+is_maximized() { xprop -id "$win" _NET_WM_STATE | grep -q 'MAXIMIZED'; }
+# WindowMaker's own maximized state restores a stale size; drop it only if set.
+unmax() { is_maximized && wmctrl -i -r "$win" -b remove,maximized_vert,maximized_horz; }
+
+# Remember the original geometry before the first snap; if the user moved/resized the window
+# by hand since our last snap, the current geometry becomes the new "original".
+remember() {
+  local cur; cur=$(frame_geom)
+  if [ -f "$state" ] && [ "$(sed -n 2p "$state")" = "$cur" ]; then return; fi
+  printf '%s\n' "$cur" > "$state"
+}
+# Record where we put the window, so a later hand-move can be told apart.
+record() { sleep 0.3; { sed -n 1p "$state"; frame_geom; } > "$state.tmp" && mv "$state.tmp" "$state"; }
+
+snap() { unmax; remember; place "$@"; record; }
+
+case $action in
+  left)     snap $DL 0 $((AW / 2)) $H ;;
+  right)    snap $((DOCK_W + AW / 2)) 0 $((AW / 2)) $H ;;
+  center)   unmax; read -r _ _ fw fh < <(frame_geom)
+            [ "$fw" -gt "$AW" ] && fw=$AW; [ "$fh" -gt "$H" ] && fh=$H
+            remember; place $(( DOCK_W + (AW - fw) / 2 )) $(( (H - fh) / 2 )) $fw $fh; record ;;
+  maximize) read -r cx cy cw ch < <(frame_geom)
+            if [ -f "$state" ] && [ "$(sed -n 2p "$state")" = "$cx $cy $cw $ch" ] && [ "$cx" = "$DL" ] && [ "$cw" -ge $((AW - 4)) ]; then
+              exec "$0" restore    # already maximized by us: toggle back
+            fi
+            snap $DL 0 $AW $H ;;
+  restore)  [ -f "$state" ] || exit 0
+            read -r ox oy ow oh < <(sed -n 1p "$state")
+            unmax; place $ox $oy $ow $oh; rm -f "$state" ;;
+  minimize) echo "$win" >> "$MIN_STACK"
+            python3 -I - "$win" <<'PY'
+import ctypes, sys
+x = ctypes.CDLL('libX11.so.6'); x.XOpenDisplay.restype = ctypes.c_void_p
+d = ctypes.c_void_p(x.XOpenDisplay(None))
+x.XIconifyWindow(d, ctypes.c_ulong(int(sys.argv[1], 16)), x.XDefaultScreen(d))
+x.XFlush(d)
+PY
+            ;;
+  *) echo "usage: wmsk-snap left|right|center|maximize|restore|minimize|unminimize" >&2; exit 1 ;;
+esac

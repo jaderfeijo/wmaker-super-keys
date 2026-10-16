@@ -1,0 +1,9 @@
+#!/bin/sh
+# wmsk-launcher [drun|run|window] : rofi, with Flatpak app directories added to the search path
+# (when they exist) so Flatpak apps show up in the launcher.
+for dir in /var/lib/flatpak/exports/share "$HOME/.local/share/flatpak/exports/share"; do
+  [ -d "$dir" ] || continue
+  case ":${XDG_DATA_DIRS:-}:" in *":$dir:"*) ;; *) XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:$dir" ;; esac
+done
+export XDG_DATA_DIRS
+exec rofi -show "${1:-drun}"

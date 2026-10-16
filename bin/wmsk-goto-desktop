@@ -1,0 +1,8 @@
+#!/bin/sh
+# wmsk-goto-desktop N : switch to desktop N (1-based), creating it if it doesn't exist yet.
+n=$1
+case "$n" in ''|*[!0-9]*) exit 1;; esac
+[ "$n" -ge 1 ] || exit 1
+count=$(xprop -root _NET_NUMBER_OF_DESKTOPS | grep -o '[0-9]*$')
+[ "$n" -gt "$count" ] && wmctrl -n "$n"
+wmctrl -s $((n - 1))
