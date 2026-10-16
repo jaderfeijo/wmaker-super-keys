@@ -1,5 +1,7 @@
 # wmaker-super-keys
 
+> Part of [wmodern](https://github.com/jaderfeijo/wmodern), a modern desktop on Window Maker: `wmodern install super-keys` installs it and keeps it up to date.
+
 macOS-style **Super-key shortcuts for [Window Maker](https://www.windowmaker.org/)** (Super = the Windows key,
 standing in for Cmd). Window Maker only binds a handful of keys out of the box and has no tiling, no "focus the
 window to my left" and no "show desktop". This adds them with small shell and Python scripts on top of
