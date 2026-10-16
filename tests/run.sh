@@ -69,6 +69,13 @@ check "Xresources back to the original" '[ "$(cat "$T/.Xresources")" = "Xft.dpi:
 check "autostart back to the original" '! grep -q "wmaker-super-keys" "$T/GNUstep/Library/WindowMaker/autostart" && grep -q "^exit 0" "$T/GNUstep/Library/WindowMaker/autostart"'
 
 echo "privacy: nothing about the machine that runs these tests is in the repository"
+echo "--no-show-desktop"
+T2=$(mktemp -d)
+HOME="$T2" bash "$REPO/install.sh" --no-restart --skip-deps-check --no-show-desktop >/dev/null 2>&1
+check "the show-desktop binding is left out" '! grep -q "show-desktop" "$T2/.xbindkeysrc" && ! grep -q "Mod4 + Shift + h" "$T2/.xbindkeysrc"'
+check "the other bindings are still there" 'grep -q "wmsk-snap left" "$T2/.xbindkeysrc"'
+rm -rf "$T2"
+
 cd "$REPO"
 files=$(git ls-files 2>/dev/null || find . -type f -not -path './.git/*')
 scan() {  # scan LABEL REGEX

@@ -6,7 +6,7 @@ set -euo pipefail
 NAME=wmaker-super-keys
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PREFIX="${PREFIX:-$HOME/.local}"
-DRY=0 UNINSTALL=0 DO_AUTOSTART=1 DO_WMKEYS=1 DO_XTERM=1 DO_ROFI=1 DO_RESTART=1 DO_DEPS=1 INSTALL_DEPS=0
+DRY=0 UNINSTALL=0 DO_AUTOSTART=1 DO_WMKEYS=1 DO_XTERM=1 DO_SHOWDESK=1 DO_ROFI=1 DO_RESTART=1 DO_DEPS=1 INSTALL_DEPS=0
 
 usage() {
   cat <<USAGE
@@ -19,6 +19,7 @@ Usage: ./install.sh [options]
   --no-autostart     do not add xbindkeys to Window Maker's autostart file
   --no-wmaker-keys   do not change Window Maker's own shortcuts (Super+W, Super+M, Super+Tab ...)
   --no-xterm         do not add Super+C / Super+V copy and paste to xterm
+  --no-show-desktop  do not bind Super+Shift+H to show-desktop (for example because another tool uses that key)
   --no-rofi          do not create a rofi config that lets Super+Space close the launcher
   --no-restart       do not restart xbindkeys / reload X resources now
   -h, --help         this help
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --no-autostart) DO_AUTOSTART=0 ;;
     --no-wmaker-keys) DO_WMKEYS=0 ;;
     --no-xterm) DO_XTERM=0 ;;
+    --no-show-desktop) DO_SHOWDESK=0 ;;
     --no-rofi) DO_ROFI=0 ;;
     --no-restart) DO_RESTART=0 ;;
     -h|--help) usage; exit 0 ;;
@@ -109,6 +111,7 @@ install_all() {
   # 2. xbindkeys bindings (a marked block; the scripts are referenced by absolute path)
   tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
   sed "s#\"wmsk-#\"$BIN/wmsk-#; s#|| wmsk-#|| $BIN/wmsk-#" "$HERE/config/xbindkeys-super.conf" > "$tmp"
+  [ "$DO_SHOWDESK" = 1 ] || sed -i '/^# Hide every window on this desktop/,/^    Mod4 + Shift + h$/d' "$tmp"
   "${EDIT[@]}" block-add "$XBINDKEYSRC" '#' "$tmp" "${DRYFLAG[@]}"
   say "  bindings added to $XBINDKEYSRC"
   if [ -f "$XBINDKEYSRC" ]; then

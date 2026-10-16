@@ -69,6 +69,7 @@ you if one of the Super combinations is already bound somewhere else.
 | `--no-autostart` | do not start `xbindkeys` from Window Maker's autostart file |
 | `--no-wmaker-keys` | leave Window Maker's own shortcuts alone |
 | `--no-xterm`, `--no-rofi` | skip the xterm paste shortcuts / the rofi config |
+| `--no-show-desktop` | do not bind `Super+Shift+H` (another tool may want that key) |
 | `--no-restart` | do not restart `xbindkeys` or reload X resources right now |
 
 ## Customize
