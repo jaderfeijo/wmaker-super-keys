@@ -38,7 +38,8 @@ def write(path, text, dry):
 def strip_block(text, comment):
     begin, end = markers(comment)
     pattern = re.compile(r"(?ms)^" + re.escape(begin) + r"\n.*?^" + re.escape(end) + r"\n?")
-    return pattern.sub("", text)
+    text = pattern.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", text).lstrip("\n")      # no blank lines left behind
 
 
 def block_add(path, comment, content_file, before_exit, dry):
