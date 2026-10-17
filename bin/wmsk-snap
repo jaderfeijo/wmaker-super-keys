@@ -64,7 +64,12 @@ frame_geom() {
      END{print x-fl, y-ft, w+fl+fr, h+ft+fb}'
 }
 # Set outer-frame geometry (x,y = frame top-left; w,h = frame size)
-place() { wmctrl -i -r "$win" -e "0,$1,$2,$(( $3 - fl - fr )),$(( $4 - ft - fb ))"; }
+# A window with Static gravity (Chromium) is placed by its client area, not its frame, so the title bar's height has to
+# be added; Window Maker also adds its 1 px border to the position it is given. Without this such a window ends up
+# with its title bar above the screen.
+ox=0; oy=0
+xprop -id "$win" WM_NORMAL_HINTS 2>/dev/null | grep -q 'window gravity: Static' && { ox=$((fl - 1)); oy=$((ft - 1)); }
+place() { wmctrl -i -r "$win" -e "0,$(( $1 + ox )),$(( $2 + oy )),$(( $3 - fl - fr )),$(( $4 - ft - fb ))"; }
 is_maximized() { xprop -id "$win" _NET_WM_STATE | grep -q 'MAXIMIZED'; }
 # WindowMaker's own maximized state restores a stale size; drop it only if set.
 unmax() { is_maximized && wmctrl -i -r "$win" -b remove,maximized_vert,maximized_horz; }
